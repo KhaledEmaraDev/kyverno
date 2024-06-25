@@ -12,7 +12,6 @@ import (
 	"github.com/kyverno/kyverno/pkg/engine/mutate"
 	engineutils "github.com/kyverno/kyverno/pkg/engine/utils"
 	"github.com/kyverno/kyverno/pkg/utils/api"
-	datautils "github.com/kyverno/kyverno/pkg/utils/data"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -29,6 +28,7 @@ type forEachMutator struct {
 func (f *forEachMutator) mutateForEach(ctx context.Context) *mutate.Response {
 	var applyCount int
 
+	patches := make([][]byte, 0, len(f.foreach))
 	for _, foreach := range f.foreach {
 		elements, err := engineutils.EvaluateList(foreach.List, f.policyContext.JSONContext())
 		if err != nil {
@@ -44,29 +44,22 @@ func (f *forEachMutator) mutateForEach(ctx context.Context) *mutate.Response {
 		if mutateResp.Status != engineapi.RuleStatusSkip {
 			applyCount++
 			if mutateResp.Status == engineapi.RuleStatusPass {
-				f.resource.unstructured = mutateResp.PatchedResource
-			}
-			f.logger.Info("mutateResp.PatchedResource", "resource", mutateResp.PatchedResource)
-			if err := f.policyContext.JSONContext().AddResource(mutateResp.PatchedResource.Object); err != nil {
-				f.logger.Error(err, "failed to update resource in context")
+				patches = append(patches, mutateResp.Patches...)
 			}
 		}
 	}
 
 	msg := fmt.Sprintf("%d elements processed", applyCount)
 	if applyCount == 0 {
-		return mutate.NewResponse(engineapi.RuleStatusSkip, f.resource.unstructured, msg)
+		return mutate.NewResponse(engineapi.RuleStatusSkip, patches, msg)
 	}
 
-	return mutate.NewResponse(engineapi.RuleStatusPass, f.resource.unstructured, msg)
+	return mutate.NewResponse(engineapi.RuleStatusPass, patches, msg)
 }
 
 func (f *forEachMutator) mutateElements(ctx context.Context, foreach kyvernov1.ForEachMutation, elements []interface{}) *mutate.Response {
 	f.policyContext.JSONContext().Checkpoint()
 	defer f.policyContext.JSONContext().Restore()
-
-	patchedResource := f.resource
-	patchedResource.unstructured = *f.resource.unstructured.DeepCopy()
 
 	reverse := false
 	// if it's a patch strategic merge, reverse by default
@@ -80,6 +73,7 @@ func (f *forEachMutator) mutateElements(ctx context.Context, foreach kyvernov1.F
 		elements = engineutils.InvertElements(elements)
 	}
 
+	patches := make([][]byte, 0, len(elements))
 	for index, element := range elements {
 		if element == nil {
 			continue
@@ -119,7 +113,7 @@ func (f *forEachMutator) mutateElements(ctx context.Context, foreach kyvernov1.F
 			m := &forEachMutator{
 				rule:          f.rule,
 				policyContext: f.policyContext,
-				resource:      patchedResource,
+				resource:      f.resource,
 				logger:        f.logger,
 				foreach:       nestedForEach,
 				nesting:       f.nesting + 1,
@@ -128,7 +122,7 @@ func (f *forEachMutator) mutateElements(ctx context.Context, foreach kyvernov1.F
 
 			mutateResp = m.mutateForEach(ctx)
 		} else {
-			mutateResp = mutate.ForEach(f.rule.Name, foreach, policyContext, patchedResource.unstructured, element, f.logger)
+			mutateResp = mutate.ForEach(f.rule.Name, foreach, policyContext, f.resource.unstructured, element, f.logger)
 		}
 
 		if mutateResp.Status == engineapi.RuleStatusFail || mutateResp.Status == engineapi.RuleStatusError {
@@ -136,21 +130,22 @@ func (f *forEachMutator) mutateElements(ctx context.Context, foreach kyvernov1.F
 		}
 
 		if mutateResp.Status == engineapi.RuleStatusPass {
-			patchedResource.unstructured = mutateResp.PatchedResource
+			patches = append(patches, mutateResp.Patches...)
 		}
 	}
 
-	if !datautils.DeepEqual(f.resource.unstructured, patchedResource.unstructured) {
-		return mutate.NewResponse(engineapi.RuleStatusPass, patchedResource.unstructured, "")
+	if len(patches) > 0 {
+		return mutate.NewResponse(engineapi.RuleStatusPass, patches, "")
 	}
 
-	return mutate.NewResponse(engineapi.RuleStatusSkip, patchedResource.unstructured, "no patches applied")
+	return mutate.NewResponse(engineapi.RuleStatusSkip, patches, "no patches applied")
 }
 
 func buildRuleResponse(rule *kyvernov1.Rule, mutateResp *mutate.Response, info resourceInfo) *engineapi.RuleResponse {
 	message := mutateResp.Message
 	if mutateResp.Status == engineapi.RuleStatusPass {
-		message = buildSuccessMessage(mutateResp.PatchedResource)
+		// TODO: old namespace?
+		message = buildSuccessMessage(info.unstructured)
 	}
 	resp := engineapi.NewRuleResponse(
 		rule.Name,
@@ -158,11 +153,15 @@ func buildRuleResponse(rule *kyvernov1.Rule, mutateResp *mutate.Response, info r
 		message,
 		mutateResp.Status,
 	)
-	if mutateResp.Status == engineapi.RuleStatusPass {
-		if len(rule.Mutation.Targets) != 0 {
-			resp = resp.WithPatchedTarget(&mutateResp.PatchedResource, info.parentResourceGVR, info.subresource)
-		}
-	}
+	resp.WithMutatePatches(mutateResp.Patches)
+
+	// TODO: handle target patches
+	// if mutateResp.Status == engineapi.RuleStatusPass {
+	// 	if len(rule.Mutation.Targets) != 0 {
+	// 		resp = resp.WithPatchedTarget(&mutateResp.PatchedResource, info.parentResourceGVR, info.subresource)
+	// 	}
+	// }
+
 	return resp
 }
 

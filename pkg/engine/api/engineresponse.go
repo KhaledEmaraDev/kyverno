@@ -3,13 +3,110 @@ package api
 import (
 	"fmt"
 
+	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	"github.com/kyverno/kyverno/ext/wildcard"
+	"github.com/kyverno/kyverno/pkg/engine/mutate/patch"
 	datautils "github.com/kyverno/kyverno/pkg/utils/data"
+	jsonutils "github.com/kyverno/kyverno/pkg/utils/json"
+	kubeutils "github.com/kyverno/kyverno/pkg/utils/kube"
 	utils "github.com/kyverno/kyverno/pkg/utils/match"
 	"gomodules.xyz/jsonpatch/v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+// ResourceChange represents a change to be applied to a resource
+type ResourceChange struct {
+	// Patches is the JSON patch representing the change
+	Patches [][]byte
+	// PatchedResource is the resource after applying the change
+	PatchedResource unstructured.Unstructured
+}
+
+func (rc ResourceChange) IsPatch() bool {
+	return len(rc.Patches) != 0
+}
+
+func (rc ResourceChange) GetPatches(base *unstructured.Unstructured) []jsonpatch.Operation {
+	if rc.IsPatch() {
+		return []jsonpatch.Operation{}
+	}
+
+	originalBytes, err := base.MarshalJSON()
+	if err != nil {
+		return nil
+	}
+	patchedBytes, err := rc.PatchedResource.MarshalJSON()
+	if err != nil {
+		return nil
+	}
+
+	patches, err := jsonpatch.CreatePatch(originalBytes, patchedBytes)
+	if err != nil {
+		return nil
+	}
+
+	return patches
+}
+
+func (rc ResourceChange) GetPatchBytes(base *unstructured.Unstructured) [][]byte {
+	if rc.IsPatch() {
+		return rc.Patches
+	}
+
+	patches := rc.GetPatches(base)
+
+	return patch.ConvertPatches(patches...)
+}
+
+func (rc ResourceChange) GetPatchedResourceBytes(logger logr.Logger, resoruceRaw []byte) ([]byte, error) {
+	if !rc.IsPatch() {
+		return rc.PatchedResource.MarshalJSON()
+	}
+
+	combinedPatch := jsonutils.JoinPatches(rc.Patches...)
+	patchedResource, err := patch.ProcessPatchJSON6902(logger, resoruceRaw, combinedPatch)
+	if err != nil {
+		return nil, err
+	}
+
+	return patchedResource, nil
+}
+
+func (rc ResourceChange) GetPatchedResource(logger logr.Logger, resoruceRaw []byte) (*unstructured.Unstructured, error) {
+	if !rc.IsPatch() {
+		return &rc.PatchedResource, nil
+	}
+
+	combinedPatch := jsonutils.JoinPatches(rc.Patches...)
+	patched, err := patch.ProcessPatchJSON6902(logger, resoruceRaw, combinedPatch)
+	if err != nil {
+		return nil, err
+	}
+
+	return kubeutils.BytesToUnstructured(patched)
+}
+
+func (rc ResourceChange) GetResourceSpec(resoruce unstructured.Unstructured) ResourceSpec {
+	if !rc.IsPatch() {
+		return ResourceSpec{
+			Kind:       rc.PatchedResource.GetKind(),
+			APIVersion: rc.PatchedResource.GetAPIVersion(),
+			Namespace:  rc.PatchedResource.GetNamespace(),
+			Name:       rc.PatchedResource.GetName(),
+			UID:        string(rc.PatchedResource.GetUID()),
+		}
+	}
+
+	// TODO: handle patch case
+	return ResourceSpec{
+		Kind:       resoruce.GetKind(),
+		APIVersion: resoruce.GetAPIVersion(),
+		Namespace:  resoruce.GetNamespace(),
+		Name:       resoruce.GetName(),
+		UID:        string(resoruce.GetUID()),
+	}
+}
 
 // EngineResponse engine response to the action
 type EngineResponse struct {
@@ -19,8 +116,8 @@ type EngineResponse struct {
 	policy GenericPolicy
 	// namespaceLabels given by policy context
 	namespaceLabels map[string]string
-	// PatchedResource is the resource patched with the engine action changes
-	PatchedResource unstructured.Unstructured
+	// Change represents the change to be applied to the resource
+	Change ResourceChange
 	// PolicyResponse contains the engine policy response
 	PolicyResponse PolicyResponse
 	// stats contains engine statistics
@@ -52,7 +149,10 @@ func NewEngineResponse(
 		Resource:        resource,
 		policy:          policy,
 		namespaceLabels: namespaceLabels,
-		PatchedResource: resource,
+		Change: ResourceChange{
+			PatchedResource: resource,
+			Patches:         [][]byte{},
+		},
 	}
 }
 
@@ -72,7 +172,12 @@ func (r EngineResponse) WithStats(stats ExecutionStats) EngineResponse {
 }
 
 func (er EngineResponse) WithPatchedResource(patchedResource unstructured.Unstructured) EngineResponse {
-	er.PatchedResource = patchedResource
+	er.Change.PatchedResource = patchedResource
+	return er
+}
+
+func (er EngineResponse) WithPatches(patches [][]byte) EngineResponse {
+	er.Change.Patches = patches
 	return er
 }
 
@@ -129,21 +234,13 @@ func (er EngineResponse) IsNil() bool {
 	return datautils.DeepEqual(er, EngineResponse{})
 }
 
+func (er EngineResponse) GetPatchBytes() [][]byte {
+	return er.Change.GetPatchBytes(&er.Resource)
+}
+
 // GetPatches returns all the patches joined
 func (er EngineResponse) GetPatches() []jsonpatch.JsonPatchOperation {
-	originalBytes, err := er.Resource.MarshalJSON()
-	if err != nil {
-		return nil
-	}
-	patchedBytes, err := er.PatchedResource.MarshalJSON()
-	if err != nil {
-		return nil
-	}
-	patches, err := jsonpatch.CreatePatch(originalBytes, patchedBytes)
-	if err != nil {
-		return nil
-	}
-	return patches
+	return er.Change.GetPatches(&er.Resource)
 }
 
 // GetFailedRules returns failed rules
@@ -163,13 +260,7 @@ func (er EngineResponse) GetSuccessRules() []string {
 
 // GetResourceSpec returns resourceSpec of er
 func (er EngineResponse) GetResourceSpec() ResourceSpec {
-	return ResourceSpec{
-		Kind:       er.PatchedResource.GetKind(),
-		APIVersion: er.PatchedResource.GetAPIVersion(),
-		Namespace:  er.PatchedResource.GetNamespace(),
-		Name:       er.PatchedResource.GetName(),
-		UID:        string(er.PatchedResource.GetUID()),
-	}
+	return er.Change.GetResourceSpec(er.Resource)
 }
 
 func (er EngineResponse) getRules(predicate func(RuleResponse) bool) []string {
@@ -210,7 +301,8 @@ func (er EngineResponse) GetValidationFailureAction() kyvernov1.ValidationFailur
 			}
 		}
 		for _, ns := range v.Namespaces {
-			if wildcard.Match(ns, er.PatchedResource.GetNamespace()) {
+			// TODO: handle new namespace
+			if wildcard.Match(ns, er.Resource.GetNamespace()) {
 				if v.NamespaceSelector == nil {
 					return v.Action
 				}

@@ -3,7 +3,6 @@ package mutate
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
@@ -17,16 +16,16 @@ import (
 )
 
 type Response struct {
-	Status          engineapi.RuleStatus
-	PatchedResource unstructured.Unstructured
-	Message         string
+	Status  engineapi.RuleStatus
+	Patches [][]byte
+	Message string
 }
 
-func NewResponse(status engineapi.RuleStatus, resource unstructured.Unstructured, msg string) *Response {
+func NewResponse(status engineapi.RuleStatus, patch [][]byte, msg string) *Response {
 	return &Response{
-		Status:          status,
-		PatchedResource: resource,
-		Message:         msg,
+		Status:  status,
+		Patches: patch,
+		Message: msg,
 	}
 }
 
@@ -34,7 +33,7 @@ func NewErrorResponse(msg string, err error) *Response {
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", msg, err)
 	}
-	return NewResponse(engineapi.RuleStatusError, unstructured.Unstructured{}, msg)
+	return NewResponse(engineapi.RuleStatusError, [][]byte{}, msg)
 }
 
 func Mutate(rule *kyvernov1.Rule, ctx context.Interface, resource unstructured.Unstructured, logger logr.Logger) *Response {
@@ -48,27 +47,23 @@ func Mutate(rule *kyvernov1.Rule, ctx context.Interface, resource unstructured.U
 		return NewErrorResponse("empty mutate rule", nil)
 	}
 
-	patchedResource := resource.DeepCopy()
-	resourceBytes, err := patchedResource.MarshalJSON()
-	if err != nil {
-		return NewErrorResponse("failed to marshal resource", err)
-	}
-	patchedBytes, err := patcher.Patch(logger, resourceBytes)
+	patches, err := patcher.Patch(logger, resource)
 	if err != nil {
 		return NewErrorResponse("failed to patch resource", err)
 	}
-	if strings.TrimSpace(string(resourceBytes)) == strings.TrimSpace(string(patchedBytes)) {
-		return NewResponse(engineapi.RuleStatusSkip, resource, "no patches applied")
+
+	if len(patches) == 0 {
+		return NewResponse(engineapi.RuleStatusSkip, nil, "no patches applied")
 	}
-	if err := patchedResource.UnmarshalJSON(patchedBytes); err != nil {
-		return NewErrorResponse("failed to unmarshal patched resource", err)
-	}
-	if rule.HasMutateExisting() {
-		if err := ctx.SetTargetResource(patchedResource.Object); err != nil {
-			return NewErrorResponse("failed to update patched target resource in the JSON context", err)
-		}
-	}
-	return NewResponse(engineapi.RuleStatusPass, *patchedResource, "resource patched")
+
+	// TODO: Does MutateExisting need the patched resource to be set in the context?
+	// if rule.HasMutateExisting() {
+	// 	if err := ctx.SetTargetResource(patchedResource.Object); err != nil {
+	// 		return NewErrorResponse("failed to update patched target resource in the JSON context", err)
+	// 	}
+	// }
+
+	return NewResponse(engineapi.RuleStatusPass, patches, "resource patched")
 }
 
 func ForEach(name string, foreach kyvernov1.ForEachMutation, policyContext engineapi.PolicyContext, resource unstructured.Unstructured, element interface{}, logger logr.Logger) *Response {
@@ -82,23 +77,16 @@ func ForEach(name string, foreach kyvernov1.ForEachMutation, policyContext engin
 		return NewErrorResponse("empty mutate rule", nil)
 	}
 
-	patchedResource := resource.DeepCopy()
-	resourceBytes, err := patchedResource.MarshalJSON()
-	if err != nil {
-		return NewErrorResponse("failed to marshal resource", err)
-	}
-	patchedBytes, err := patcher.Patch(logger, resourceBytes)
+	patches, err := patcher.Patch(logger, resource)
 	if err != nil {
 		return NewErrorResponse("failed to patch resource", err)
 	}
-	if strings.TrimSpace(string(resourceBytes)) == strings.TrimSpace(string(patchedBytes)) {
-		return NewResponse(engineapi.RuleStatusSkip, resource, "no patches applied")
-	}
-	if err := patchedResource.UnmarshalJSON(patchedBytes); err != nil {
-		return NewErrorResponse("failed to unmarshal patched resource", err)
+
+	if len(patches) == 0 {
+		return NewResponse(engineapi.RuleStatusSkip, [][]byte{}, "no patches applied")
 	}
 
-	return NewResponse(engineapi.RuleStatusPass, *patchedResource, "resource patched")
+	return NewResponse(engineapi.RuleStatusPass, patches, "resource patched")
 }
 
 func substituteAllInForEach(fe kyvernov1.ForEachMutation, ctx context.Interface, logger logr.Logger) (*kyvernov1.ForEachMutation, error) {

@@ -227,16 +227,17 @@ func NewBackgroundSuccessEvent(source Source, policy kyvernov1.PolicyInterface, 
 	return events
 }
 
+// TODO: get key from patched resource
 func NewPolicyExceptionEvents(engineResponse engineapi.EngineResponse, ruleResp engineapi.RuleResponse, source Source) []Info {
 	exception := ruleResp.Exception()
 	exceptionName, exceptionNamespace := exception.GetName(), exception.GetNamespace()
-	policyMessage := fmt.Sprintf("resource %s was skipped from rule %s due to policy exception %s/%s", resourceKey(engineResponse.PatchedResource), ruleResp.Name(), exceptionNamespace, exceptionName)
+	policyMessage := fmt.Sprintf("resource %s was skipped from rule %s due to policy exception %s/%s", resourceKey(engineResponse.Resource), ruleResp.Name(), exceptionNamespace, exceptionName)
 	pol := engineResponse.Policy().AsKyvernoPolicy()
 	var exceptionMessage string
 	if pol.GetNamespace() == "" {
-		exceptionMessage = fmt.Sprintf("resource %s was skipped from policy rule %s/%s", resourceKey(engineResponse.PatchedResource), pol.GetName(), ruleResp.Name())
+		exceptionMessage = fmt.Sprintf("resource %s was skipped from policy rule %s/%s", resourceKey(engineResponse.Resource), pol.GetName(), ruleResp.Name())
 	} else {
-		exceptionMessage = fmt.Sprintf("resource %s was skipped from policy rule %s/%s/%s", resourceKey(engineResponse.PatchedResource), pol.GetNamespace(), pol.GetName(), ruleResp.Name())
+		exceptionMessage = fmt.Sprintf("resource %s was skipped from policy rule %s/%s/%s", resourceKey(engineResponse.Resource), pol.GetNamespace(), pol.GetName(), ruleResp.Name())
 	}
 	regarding := corev1.ObjectReference{
 		// TODO: iirc it's not safe to assume api version is set

@@ -644,7 +644,7 @@ func Test_SignatureGoodSigned(t *testing.T) {
 	engineResp, _ := testVerifyAndPatchImages(context.TODO(), registryclient.NewOrDie(), nil, policyContext, cfg)
 	assert.Equal(t, len(engineResp.PolicyResponse.Rules), 1)
 	assert.Equal(t, engineResp.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass, engineResp.PolicyResponse.Rules[0].Message())
-	constainers, found, err := unstructured.NestedSlice(engineResp.PatchedResource.UnstructuredContent(), "spec", "containers")
+	constainers, found, err := unstructured.NestedSlice(engineResp.Change.PatchedResource.UnstructuredContent(), "spec", "containers")
 	assert.NilError(t, err)
 	assert.Equal(t, true, found)
 	image, found, err := unstructured.NestedString(constainers[0].(map[string]interface{}), "image")

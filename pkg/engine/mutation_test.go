@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-logr/logr"
 	kyverno "github.com/kyverno/kyverno/api/kyverno/v1"
 	client "github.com/kyverno/kyverno/pkg/clients/dclient"
 	"github.com/kyverno/kyverno/pkg/config"
@@ -130,7 +131,8 @@ func Test_VariableSubstitutionPatchStrategicMerge(t *testing.T) {
 	er := testMutate(context.TODO(), nil, nil, policyContext, nil)
 	require.Equal(t, 1, len(er.PolicyResponse.Rules))
 
-	patched := er.PatchedResource
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
 	require.NotEqual(t, resource, patched)
 	unstructured.SetNestedField(resource.UnstructuredContent(), "check-root-user", "metadata", "labels", "appname")
 	require.Equal(t, resource, patched)
@@ -273,7 +275,8 @@ func Test_variableSubstitutionCLI(t *testing.T) {
 
 	require.Equal(t, 1, len(er.PolicyResponse.Rules))
 
-	patched := er.PatchedResource
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
 	require.NotEqual(t, resource, patched)
 	unstructured.SetNestedField(resource.UnstructuredContent(), "dev1", "metadata", "labels", "my-environment-name")
 	require.Equal(t, resource, patched)
@@ -362,7 +365,8 @@ func Test_chained_rules(t *testing.T) {
 	er := testMutate(context.TODO(), nil, nil, policyContext, nil)
 	require.Equal(t, 2, len(er.PolicyResponse.Rules))
 
-	patched := er.PatchedResource
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
 	require.NotEqual(t, resource, patched)
 
 	containers, found, err := unstructured.NestedSlice(resource.UnstructuredContent(), "spec", "containers")
@@ -437,7 +441,8 @@ func Test_precondition(t *testing.T) {
 	er := testMutate(context.TODO(), nil, nil, policyContext, nil)
 	require.Equal(t, 1, len(er.PolicyResponse.Rules))
 
-	patched := er.PatchedResource
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
 	require.NotEqual(t, resource, patched)
 	unstructured.SetNestedField(resource.UnstructuredContent(), "test", "metadata", "labels", "my-added-label")
 	require.Equal(t, resource, patched)
@@ -520,7 +525,8 @@ func Test_nonZeroIndexNumberPatchesJson6902(t *testing.T) {
 	er := testMutate(context.TODO(), nil, nil, policyContext, nil)
 	require.Equal(t, 2, len(er.PolicyResponse.Rules))
 
-	patched := er.PatchedResource
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
 	require.NotEqual(t, resource, patched)
 
 	subsetsField, found, err := unstructured.NestedFieldNoCopy(resource.UnstructuredContent(), "subsets")
@@ -632,7 +638,10 @@ func Test_foreach(t *testing.T) {
 	assert.Equal(t, len(er.PolicyResponse.Rules), 1)
 	assert.Equal(t, er.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass)
 
-	containers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "containers")
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
+	containers, _, err := unstructured.NestedSlice(patched.Object, "spec", "containers")
 	assert.NilError(t, err)
 	for _, c := range containers {
 		ctnr := c.(map[string]interface{})
@@ -733,7 +742,10 @@ func Test_foreach_element_mutation(t *testing.T) {
 	assert.Equal(t, len(er.PolicyResponse.Rules), 1)
 	assert.Equal(t, er.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass)
 
-	containers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "containers")
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
+	containers, _, err := unstructured.NestedSlice(patched.Object, "spec", "containers")
 	assert.NilError(t, err)
 	for _, c := range containers {
 		ctnr := c.(map[string]interface{})
@@ -853,7 +865,10 @@ func Test_Container_InitContainer_foreach(t *testing.T) {
 	assert.Equal(t, len(er.PolicyResponse.Rules), 1)
 	assert.Equal(t, er.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass)
 
-	containers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "containers")
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
+	containers, _, err := unstructured.NestedSlice(patched.Object, "spec", "containers")
 	assert.NilError(t, err)
 	for _, c := range containers {
 		ctnr := c.(map[string]interface{})
@@ -865,7 +880,7 @@ func Test_Container_InitContainer_foreach(t *testing.T) {
 		}
 	}
 
-	initContainers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "initContainers")
+	initContainers, _, err := unstructured.NestedSlice(patched.Object, "spec", "initContainers")
 	assert.NilError(t, err)
 	for _, c := range initContainers {
 		ctnr := c.(map[string]interface{})
@@ -961,7 +976,10 @@ func Test_foreach_order_mutation_(t *testing.T) {
 	assert.Equal(t, len(er.PolicyResponse.Rules), 1)
 	assert.Equal(t, er.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass)
 
-	containers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "containers")
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
+	containers, _, err := unstructured.NestedSlice(patched.Object, "spec", "containers")
 	assert.NilError(t, err)
 
 	for i, c := range containers {
@@ -1061,7 +1079,10 @@ func Test_patchStrategicMerge_descending(t *testing.T) {
 	assert.Equal(t, len(er.PolicyResponse.Rules), 1)
 	assert.Equal(t, er.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass)
 
-	containers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "containers")
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
+	containers, _, err := unstructured.NestedSlice(patched.Object, "spec", "containers")
 	assert.NilError(t, err)
 
 	for i, c := range containers {
@@ -1161,7 +1182,10 @@ func Test_patchStrategicMerge_ascending(t *testing.T) {
 	assert.Equal(t, len(er.PolicyResponse.Rules), 1)
 	assert.Equal(t, er.PolicyResponse.Rules[0].Status(), engineapi.RuleStatusPass)
 
-	containers, _, err := unstructured.NestedSlice(er.PatchedResource.Object, "spec", "containers")
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
+	containers, _, err := unstructured.NestedSlice(patched.Object, "spec", "containers")
 	assert.NilError(t, err)
 
 	for i, c := range containers {
@@ -1345,6 +1369,7 @@ func Test_mutate_nested_foreach(t *testing.T) {
     ]
   }
 }`)
+
 	policy := loadResource[kyverno.ClusterPolicy](t, policyRaw)
 	resource := loadUnstructured(t, resourceRaw)
 	expected := loadUnstructured(t, expectedRaw)
@@ -1354,7 +1379,9 @@ func Test_mutate_nested_foreach(t *testing.T) {
 	require.Equal(t, 1, len(er.PolicyResponse.Rules))
 	require.Equal(t, engineapi.RuleStatusPass, er.PolicyResponse.Rules[0].Status())
 
-	patched := er.PatchedResource
+	patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+	require.NoError(t, err)
+
 	require.Equal(t, expected, patched)
 }
 
@@ -1994,8 +2021,11 @@ func Test_RuleSelectorMutate(t *testing.T) {
       }
     }`)
 
+		patched, err := er.Change.GetPatchedResource(logr.Discard(), resourceRaw)
+		require.NoError(t, err)
+
 		expected := loadUnstructured(t, expectedRaw)
-		require.Equal(t, expected, er.PatchedResource)
+		require.Equal(t, expected, patched)
 	}
 
 	applyOne := kyverno.ApplyOne
@@ -2029,7 +2059,7 @@ func Test_RuleSelectorMutate(t *testing.T) {
     }`)
 
 		expected := loadUnstructured(t, expectedRaw)
-		require.Equal(t, expected, er.PatchedResource)
+		require.Equal(t, expected, er.Change.PatchedResource)
 	}
 }
 

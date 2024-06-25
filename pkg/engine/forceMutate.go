@@ -8,8 +8,10 @@ import (
 	"github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/internal"
 	"github.com/kyverno/kyverno/pkg/engine/mutate"
+	mutatepatches "github.com/kyverno/kyverno/pkg/engine/mutate/patch"
 	"github.com/kyverno/kyverno/pkg/engine/variables"
 	"github.com/kyverno/kyverno/pkg/utils/api"
+	jsonutils "github.com/kyverno/kyverno/pkg/utils/json"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -84,18 +86,27 @@ func applyForEachMutate(name string, foreach []kyvernov1.ForEachMutation, resour
 
 func applyPatches(mergePatch apiextensions.JSON, jsonPatch string, resource unstructured.Unstructured, logger logr.Logger) (unstructured.Unstructured, error) {
 	patcher := mutate.NewPatcher(mergePatch, jsonPatch)
+
+	patches, err := patcher.Patch(logger, resource)
+	if err != nil {
+		return resource, err
+	}
+	patch := jsonutils.JoinPatches(patches...)
+
 	resourceBytes, err := resource.MarshalJSON()
 	if err != nil {
 		return resource, err
 	}
-	resourceBytes, err = patcher.Patch(logger, resourceBytes)
+
+	resourceBytes, err = mutatepatches.ProcessPatchJSON6902(logger, patch, resourceBytes)
 	if err != nil {
 		return resource, err
 	}
+
 	if err := resource.UnmarshalJSON(resourceBytes); err != nil {
 		return resource, err
 	}
-	return resource, err
+	return resource, nil
 }
 
 // removeConditions mutates the rule to remove AnyAllConditions

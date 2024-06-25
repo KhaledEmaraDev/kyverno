@@ -105,10 +105,10 @@ func (e *engine) Mutate(
 	response := engineapi.NewEngineResponseFromPolicyContext(policyContext)
 	logger := internal.LoggerWithPolicyContext(logging.WithName("engine.mutate"), policyContext)
 	if internal.MatchPolicyContext(logger, e.client, policyContext, e.configuration) {
-		policyResponse, patchedResource := e.mutate(ctx, logger, policyContext)
+		policyResponse, _ := e.mutate(ctx, logger, policyContext)
 		response = response.
 			WithPolicyResponse(policyResponse).
-			WithPatchedResource(patchedResource)
+			WithPatches(policyResponse.Patches())
 	}
 	response = response.WithStats(engineapi.NewExecutionStats(startTime, time.Now()))
 	e.reportMetrics(ctx, logger, policyContext.Operation(), policyContext.AdmissionOperation(), response)
