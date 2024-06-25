@@ -11,6 +11,8 @@ import (
 	engineapi "github.com/kyverno/kyverno/pkg/engine/api"
 	"github.com/kyverno/kyverno/pkg/engine/context"
 	"github.com/kyverno/kyverno/pkg/engine/jmespath"
+	mutatepatches "github.com/kyverno/kyverno/pkg/engine/mutate/patch"
+	jsonutils "github.com/kyverno/kyverno/pkg/utils/json"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -37,7 +39,24 @@ func applyPatches(rule *types.Rule, resource unstructured.Unstructured) (*engine
 	if mutateResp.Status != engineapi.RuleStatusPass {
 		return engineapi.NewRuleResponse("", engineapi.Mutation, mutateResp.Message, mutateResp.Status), resource
 	}
-	return engineapi.RulePass("", engineapi.Mutation, mutateResp.Message), mutateResp.PatchedResource
+
+	patch := jsonutils.JoinPatches(mutateResp.Patches...)
+
+	resourceBytes, err := resource.MarshalJSON()
+	if err != nil {
+		return engineapi.RuleError("", engineapi.Mutation, "failed to marshal resource", err), resource
+	}
+
+	resourceBytes, err = mutatepatches.ProcessPatchJSON6902(logr.Discard(), patch, resourceBytes)
+	if err != nil {
+		return engineapi.RuleError("", engineapi.Mutation, "failed to apply patch", err), resource
+	}
+
+	if err := resource.UnmarshalJSON(resourceBytes); err != nil {
+		return engineapi.RuleError("", engineapi.Mutation, "failed to unmarshal patched resource", err), resource
+	}
+
+	return engineapi.RulePass("", engineapi.Mutation, mutateResp.Message), resource
 }
 
 func TestProcessPatches_EmptyPatches(t *testing.T) {

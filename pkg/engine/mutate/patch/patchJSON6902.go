@@ -8,7 +8,7 @@ import (
 )
 
 // ProcessPatchJSON6902 ...
-func ProcessPatchJSON6902(logger logr.Logger, patchesJSON6902 []byte, resource resource) (resource, error) {
+func ProcessPatchJSON6902(logger logr.Logger, patchesJSON6902 []byte, resource resource_raw) (resource_raw, error) {
 	patchedResourceRaw, err := applyPatchesWithOptions(resource, patchesJSON6902)
 	if err != nil {
 		logger.Error(err, "failed to apply JSON Patch")

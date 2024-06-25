@@ -6,24 +6,34 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"gomodules.xyz/jsonpatch/v2"
 	"sigs.k8s.io/kustomize/api/filters/patchstrategicmerge"
 	filtersutil "sigs.k8s.io/kustomize/kyaml/filtersutil"
 	yaml "sigs.k8s.io/kustomize/kyaml/yaml"
 )
 
 // ProcessStrategicMergePatch ...
-func ProcessStrategicMergePatch(logger logr.Logger, overlay interface{}, resource resource) (resource, error) {
+func ProcessStrategicMergePatch(logger logr.Logger, overlay interface{}, resource resource) (patches, error) {
 	overlayBytes, err := json.Marshal(overlay)
 	if err != nil {
-		logger.Error(err, "failed to marshal resource")
-		return nil, err
+		logger.Error(err, "failed to marshal overlay")
+		return [][]byte{}, err
 	}
-	patchedBytes, err := strategicMergePatch(logger, string(resource), string(overlayBytes))
+	resourceBytes, err := resource.MarshalJSON()
+	if err != nil {
+		logger.Error(err, "failed to marshal resource")
+		return [][]byte{}, err
+	}
+	patchedBytes, err := strategicMergePatch(logger, string(resourceBytes), string(overlayBytes))
 	if err != nil {
 		logger.Error(err, "failed to apply patchStrategicMerge")
-		return nil, err
+		return [][]byte{}, err
 	}
-	return patchedBytes, nil
+	patches, err := jsonpatch.CreatePatch(resourceBytes, patchedBytes)
+	if err != nil {
+		return [][]byte{}, err
+	}
+	return ConvertPatches(patches...), nil
 }
 
 func strategicMergePatch(logger logr.Logger, base, overlay string) ([]byte, error) {

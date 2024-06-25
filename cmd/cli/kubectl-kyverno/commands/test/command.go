@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-logr/logr"
 	"github.com/kyverno/kyverno/cmd/cli/kubectl-kyverno/apis/v1alpha1"
 	"github.com/kyverno/kyverno/cmd/cli/kubectl-kyverno/command"
 	"github.com/kyverno/kyverno/cmd/cli/kubectl-kyverno/deprecations"
@@ -158,7 +159,12 @@ func checkResult(test v1alpha1.TestResult, fs billy.Filesystem, resoucePath stri
 	}
 	// fallback on deprecated field
 	if test.PatchedResource != "" {
-		equals, err := getAndCompareResource(response.PatchedResource, fs, filepath.Join(resoucePath, test.PatchedResource))
+		logger := logr.Discard()
+		patched, err := response.Change.GetPatchedResource(logger, []byte(test.Resource))
+		if err != nil {
+			return false, err.Error(), "Resource error"
+		}
+		equals, err := getAndCompareResource(*patched, fs, filepath.Join(resoucePath, test.PatchedResource))
 		if err != nil {
 			return false, err.Error(), "Resource error"
 		}

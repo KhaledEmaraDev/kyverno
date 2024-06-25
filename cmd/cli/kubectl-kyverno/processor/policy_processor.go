@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	json_patch "github.com/evanphx/json-patch/v5"
+	"github.com/go-logr/logr"
 	kyvernov1 "github.com/kyverno/kyverno/api/kyverno/v1"
 	kyvernov2 "github.com/kyverno/kyverno/api/kyverno/v2"
 	"github.com/kyverno/kyverno/cmd/cli/kubectl-kyverno/apis/v1alpha1"
@@ -57,6 +58,8 @@ type PolicyProcessor struct {
 }
 
 func (p *PolicyProcessor) ApplyPoliciesOnResource() ([]engineapi.EngineResponse, error) {
+	logger := logr.Discard()
+
 	cfg := config.NewDefaultConfiguration(false)
 	jp := jmespath.New(cfg)
 	resource := p.Resource
@@ -119,7 +122,15 @@ func (p *PolicyProcessor) ApplyPoliciesOnResource() ([]engineapi.EngineResponse,
 			return responses, fmt.Errorf("failed to print mutated result (%w)", err)
 		}
 		responses = append(responses, mutateResponse)
-		resource = mutateResponse.PatchedResource
+		rawResource, err := resource.MarshalJSON()
+		if err != nil {
+			return responses, err
+		}
+		patched, err := mutateResponse.Change.GetPatchedResource(logger, rawResource)
+		if err != nil {
+			return responses, err
+		}
+		resource = *patched
 	}
 	// verify images
 	for _, policy := range p.Policies {
@@ -134,7 +145,7 @@ func (p *PolicyProcessor) ApplyPoliciesOnResource() ([]engineapi.EngineResponse,
 		// update annotation to reflect verified images
 		var patches []jsonpatch.JsonPatchOperation
 		if !verifiedImageData.IsEmpty() {
-			annotationPatches, err := verifiedImageData.Patches(len(verifyImageResponse.PatchedResource.GetAnnotations()) != 0, log.Log)
+			annotationPatches, err := verifiedImageData.Patches(len(verifyImageResponse.Change.PatchedResource.GetAnnotations()) != 0, log.Log)
 			if err != nil {
 				return responses, err
 			}
@@ -148,7 +159,7 @@ func (p *PolicyProcessor) ApplyPoliciesOnResource() ([]engineapi.EngineResponse,
 				return responses, err
 			}
 			options := &json_patch.ApplyOptions{SupportNegativeIndices: true, AllowMissingPathOnRemove: true, EnsurePathExistsOnAdd: true}
-			resourceBytes, err := verifyImageResponse.PatchedResource.MarshalJSON()
+			resourceBytes, err := verifyImageResponse.Change.PatchedResource.MarshalJSON()
 			if err != nil {
 				return responses, err
 			}
@@ -156,12 +167,12 @@ func (p *PolicyProcessor) ApplyPoliciesOnResource() ([]engineapi.EngineResponse,
 			if err != nil {
 				return responses, err
 			}
-			if err := verifyImageResponse.PatchedResource.UnmarshalJSON(patchedResourceBytes); err != nil {
+			if err := verifyImageResponse.Change.PatchedResource.UnmarshalJSON(patchedResourceBytes); err != nil {
 				return responses, err
 			}
 		}
 		responses = append(responses, verifyImageResponse)
-		resource = verifyImageResponse.PatchedResource
+		resource = verifyImageResponse.Change.PatchedResource
 	}
 	// validate
 	for _, policy := range p.Policies {
@@ -174,7 +185,7 @@ func (p *PolicyProcessor) ApplyPoliciesOnResource() ([]engineapi.EngineResponse,
 		}
 		validateResponse := eng.Validate(context.TODO(), policyContext)
 		responses = append(responses, validateResponse)
-		resource = validateResponse.PatchedResource
+		resource = validateResponse.Change.PatchedResource
 	}
 	// generate
 	for _, policy := range p.Policies {
@@ -341,7 +352,16 @@ func (p *PolicyProcessor) makePolicyContext(
 func (p *PolicyProcessor) processMutateEngineResponse(response engineapi.EngineResponse, resourcePath string) error {
 	printMutatedRes := p.Rc.addMutateResponse(response)
 	if printMutatedRes && p.PrintPatchResource {
-		yamlEncodedResource, err := yamlv2.Marshal(response.PatchedResource.Object)
+		logger := logr.Discard()
+		rawResource, err := response.Resource.MarshalJSON()
+		if err != nil {
+			return err
+		}
+		patched, err := response.Change.GetPatchedResource(logger, rawResource)
+		if err != nil {
+			return err
+		}
+		yamlEncodedResource, err := yamlv2.Marshal(patched.Object)
 		if err != nil {
 			return fmt.Errorf("failed to marshal (%w)", err)
 		}

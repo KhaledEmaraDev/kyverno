@@ -24,6 +24,16 @@ func NewPolicyResponse() PolicyResponse {
 	return PolicyResponse{}
 }
 
+func (pr *PolicyResponse) Patches() [][]byte {
+	var patches [][]byte
+	for _, rule := range pr.Rules {
+		if rule.HasMutatePatch() {
+			patches = append(patches, rule.MutatePatches()...)
+		}
+	}
+	return patches
+}
+
 func (pr *PolicyResponse) Stats() PolicyStats {
 	return pr.stats
 }
@@ -34,4 +44,13 @@ func (pr *PolicyResponse) RulesAppliedCount() int {
 
 func (pr *PolicyResponse) RulesErrorCount() int {
 	return pr.stats.RulesErrorCount()
+}
+
+func (pr *PolicyResponse) HasPatches() bool {
+	for _, rule := range pr.Rules {
+		if rule.HasMutatePatch() {
+			return true
+		}
+	}
+	return false
 }

@@ -40,7 +40,9 @@ func TestEngineResponse_IsEmpty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -82,7 +84,9 @@ func TestEngineResponse_IsNil(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -169,7 +173,9 @@ func TestEngineResponse_IsOneOf(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -242,7 +248,9 @@ func TestEngineResponse_IsSuccessful(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -315,7 +323,9 @@ func TestEngineResponse_IsSkipped(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -388,7 +398,9 @@ func TestEngineResponse_IsFailed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -461,7 +473,9 @@ func TestEngineResponse_IsError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -550,7 +564,9 @@ func TestEngineResponse_GetFailedRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -666,7 +682,9 @@ func TestEngineResponse_GetSuccessRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -896,7 +914,9 @@ func TestEngineResponse_GetValidationFailureAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
@@ -1059,7 +1079,9 @@ func TestEngineResponse_GetResourceSpec(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			er := EngineResponse{
-				PatchedResource: tt.fields.PatchedResource,
+				Change: ResourceChange{
+					PatchedResource: tt.fields.PatchedResource,
+				},
 				PolicyResponse:  tt.fields.PolicyResponse,
 				namespaceLabels: tt.fields.namespaceLabels,
 			}.WithPolicy(tt.fields.GenericPolicy)
