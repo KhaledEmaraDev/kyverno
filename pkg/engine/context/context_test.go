@@ -2,6 +2,7 @@ package context
 
 import (
 	"reflect"
+	"sync"
 	"testing"
 
 	urkyverno "github.com/kyverno/kyverno/api/kyverno/v2"
@@ -226,4 +227,30 @@ func TestAddVariable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkContextRace(b *testing.B) {
+	ctx := NewContextFromRaw(jp, map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+	})
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			var wg sync.WaitGroup
+			wg.Add(2)
+
+			go func() {
+				defer wg.Done()
+				ctx.Checkpoint()
+			}()
+
+			go func() {
+				defer wg.Done()
+				ctx.Restore()
+			}()
+
+			wg.Wait()
+		}
+	})
 }
