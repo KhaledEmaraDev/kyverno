@@ -9,6 +9,8 @@ on:
     branches:
       - "main"
       - "release*"
+  schedule:
+    - cron: "43 0 * * 0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,6 +75,20 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  should-upgrade:
+    runs-on: ubuntu-latest
+    outputs:
+      upgrades: ${{ steps.check.outputs.upgrades }}
+    steps:
+      - name: Check Trigger
+        id: check
+        run: |
+          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
+            echo 'upgrades=["latest","minor","patch"]' >> $GITHUB_OUTPUT
+          else
+            echo 'upgrades=["latest"]' >> $GITHUB_OUTPUT
+          fi
+
   standard:
     runs-on: ubuntu-latest
     permissions:
@@ -117,9 +133,11 @@ jobs:
           - ^verify-manifests$
           - ^verifyImages$
           - ^webhooks$
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
     needs:
-    - prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -154,7 +172,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -187,8 +236,11 @@ jobs:
             version: v1.27.13
         tests:
           - generate-validating-admission-policy
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -223,7 +275,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -261,8 +344,11 @@ jobs:
         tests:
           - generate-validating-admission-policy
           - webhook-configurations
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -297,7 +383,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -330,8 +447,11 @@ jobs:
             version: v1.27.13
         tests:
           - validating-admission-policy-reports
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -366,7 +486,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -403,8 +554,11 @@ jobs:
             version: v1.30.0
         tests:
           - validating-admission-policy-reports
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -439,7 +593,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -479,8 +664,11 @@ jobs:
         tests:
           - force-failure-policy-ignore
           - rbac
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -515,7 +703,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -554,8 +773,11 @@ jobs:
             version: v1.30.0
         tests:
           - ttl
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -590,7 +812,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -629,8 +882,11 @@ jobs:
             version: v1.30.x
         tests:
           - custom-sigstore
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -675,14 +931,45 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # prepare test image
       - name: Create test image
         shell: bash
         run: |
-          DIGEST=$(crane digest cgr.dev/chainguard/static)   
+          DIGEST=$(crane digest cgr.dev/chainguard/static)
           IMAGE_NAME=$(uuidgen | tr "[:upper:]" "[:lower:]")
           TEST_IMAGE_URL=ttl.sh/${IMAGE_NAME}:1h
           crane copy cgr.dev/chainguard/static@$DIGEST $TEST_IMAGE_URL
@@ -723,8 +1010,11 @@ jobs:
             version: v1.30.0
         tests:
           - rbac
-    needs: prepare-images
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
+    needs:
+      - should-upgrade
+      - prepare-images
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -759,7 +1049,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -825,10 +1146,12 @@ jobs:
           # - ^tekton
           # - ^traefik
           # - ^velero
+        upgrades: ${{ fromJson(needs.should-upgrade.outputs.upgrades) }}
     needs:
+      - should-upgrade
       - prepare-images
       - prepare-cli
-    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }}
+    name: ${{ matrix.k8s-version.name }} - ${{ matrix.config.name }} - ${{ matrix.tests }} - ${{ matrix.upgrades }}
     steps:
       - name: Checkout kyverno/kyverno
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -878,7 +1201,38 @@ jobs:
           set -e
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
-          make kind-install-kyverno
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            $HELM repo add kyverno https://kyverno.github.io/kyverno
+            $HELM repo update
+            case "${{ matrix.upgrades }}" in
+              "patch")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2"."$3]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "minor")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -2 | tail -1)
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno --versions | awk -F' +' '{print $2}' | awk '{$1=$1};1' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vr | awk -F. '!seen[$1"."$2]++' | head -1)
+                echo "Upgarding Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                ;;
+              "latest")
+                UPGRADE_FROM=$($HELM search repo kyverno/kyverno -o json | jq -r '.[0].version')
+                echo "Installing Kyverno using Helm with Chart version $UPGRADE_FROM"
+                make kind-install-kyverno-from-repo
+                echo "Upgarding Kyverno using Helm with Chart version latest"
+                make kind-install-kyverno
+                ;;
+            esac
+          else
+            make kind-install-kyverno
+          fi
       - name: Wait for kyverno ready
         uses: ./.github/actions/kyverno-wait-ready
       # run tests
@@ -958,7 +1312,7 @@ jobs:
         tests:
           - ^cli$
     needs:
-    - prepare-cli
+      - prepare-cli
     name: ${{ matrix.tests }} - chainsaw
     steps:
       - name: Checkout
