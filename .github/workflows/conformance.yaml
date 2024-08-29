@@ -83,7 +83,7 @@ jobs:
       - name: Check Trigger
         id: check
         run: |
-          if [[ ${{ github.event_name }} == 'schedule' ]]; then
+          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
             echo 'upgrades=["latest","minor","patch"]' >> $GITHUB_OUTPUT
           else
             echo 'upgrades=["latest"]' >> $GITHUB_OUTPUT
@@ -173,7 +173,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -276,7 +276,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -384,7 +384,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -487,7 +487,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -594,7 +594,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -704,7 +704,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -813,7 +813,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -932,7 +932,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -1050,7 +1050,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
@@ -1202,7 +1202,7 @@ jobs:
           export HELM=${{ steps.helm.outputs.helm-path }}
           export USE_CONFIG=${{ join(matrix.config.values, ',') }}
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             $HELM repo add kyverno https://kyverno.github.io/kyverno
             $HELM repo update
             case "${{ matrix.upgrades }}" in
