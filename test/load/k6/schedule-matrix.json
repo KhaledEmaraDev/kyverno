@@ -1,0 +1,7 @@
+[
+  { "name": "kyverno-pss", "scenario": "average" },
+  { "name": "kyverno-pss", "scenario": "stress" },
+  { "name": "kyverno-pss", "scenario": "soak" },
+  { "name": "kyverno-pss", "scenario": "spike" },
+  { "name": "kyverno-pss", "scenario": "breakpoint" }
+]
